@@ -1,0 +1,10 @@
+__pycache__/
+runs/
+checkpoint/
+dataset/
+notebooks/
+config.ini
+*.sh
+core.*
+init_local_env.sh
+*.log

@@ -1,0 +1,23 @@
+# Base paths for different environments
+local:
+  checkpoint: './checkpoint'
+  tensorboard: './runs'
+  cache: './cache'
+  dataset_prefix: './dataset'
+
+cluster:
+  checkpoint: './checkpoint'
+  tensorboard: './runs'
+  cache: './cache'
+  dataset_prefix: './dataset'
+
+# Common dataset structure
+dataset:
+  train: 'train.csv'
+  test: 'test.csv'
+  embeddings:
+    template_id_mapping: 'embeddings/template_id_mapping.json'
+    sentence_embedding: 'embeddings/sentence_384_embedding_params.pth'
+    random_embedding: 'embeddings/random_384_embedding_params.pth'
+    onehot_embedding: 'embeddings/onehot_embedding_params.pth' 
+    bert_embedding: 'embeddings/bert_768_embedding_params.pth'

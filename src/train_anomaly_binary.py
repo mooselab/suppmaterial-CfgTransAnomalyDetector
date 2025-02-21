@@ -1,17 +1,62 @@
 import torch
 from torch.utils.data import DataLoader
 from anomaly_model import AnomalyModel
-# from anomaly_model_bert import AnomalyModel
-from utils import LogSequenceDataset, VariantLogSequenceDataset, RawLogDataset, HDFS_Dataset, LogSeqTokenizer, EarlyStopping, summary
+from utils import VariantLogSequenceDataset, HDFS_Dataset, LogSeqTokenizer, EarlyStopping
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-from torch.optim.lr_scheduler import ExponentialLR, OneCycleLR
-from sklearn.metrics import precision_score, recall_score, f1_score, confusion_matrix
+from torch.optim.lr_scheduler import OneCycleLR
+from sklearn.metrics import confusion_matrix
 import datetime
 import os
 import math
 import random
 import numpy as np
+import argparse
+import yaml
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Arguments for anomaly detection training.")
+    
+    parser.add_argument(
+        '--dataset', 
+        type=str,
+        default='BGL',
+        help="Dataset to use for training"
+    )
+    
+    parser.add_argument(
+        '--env', 
+        type=str,
+        default='local',
+        choices=['local', 'cluster'],
+        help="Specify the environment (local or cluster)"
+    )
+    
+    parser.add_argument(
+        '--seq_enc_method',
+        type=str,
+        default='temporal',
+        choices=['temporal', 'positional', 'time2vec', 'None', 'temporal_only', 'time2vec_only'],
+        help="Sequence encoding method"
+    )
+    
+    parser.add_argument(
+        '--d_model', 
+        type=int, 
+        default=64, 
+        help="Specify the d_model. Default is 64."  # empirically best value for all four datasets
+    )
+    
+    parser.add_argument(
+        '--embed_method',
+        type=str,
+        default='sentence',
+        choices=['sentence', 'random', 'onehot'],
+        help="Log embedding method"
+    )
+
+    return parser.parse_args()
 
 
 def calculate_metrics(true_labels, predicted_probs, threshold=0.5):
@@ -20,9 +65,6 @@ def calculate_metrics(true_labels, predicted_probs, threshold=0.5):
     predicted_labels_np = predicted_labels.cpu().numpy()
     true_labels_flat = true_labels_np.flatten()
     predicted_labels_flat = predicted_labels_np.flatten()
-    # precision = precision_score(true_labels_flat, predicted_labels_flat)
-    # recall = recall_score(true_labels_flat, predicted_labels_flat)
-    # f1 = f1_score(true_labels_flat, predicted_labels_flat)
     conf_matrix = confusion_matrix(true_labels_flat, predicted_labels_flat)
     tn, fp, fn, tp = conf_matrix.ravel()
     print(f'tn:{tn}, fp:{fp}, fn:{fn}, tp:{tp}')
@@ -68,22 +110,6 @@ class BinaryAnomalyTrain:
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
         writer = SummaryWriter(os.path.join(tb_path, str_cfg+'_'+timestamp))
         self.earlystopping.filename = str_cfg+'.cpt'
-
-        # eval_loss, eval_precision, eval_recall, eval_specificity, eval_f1 = self.evaluate_model()
-        # print(f"Test Loss: {eval_loss:.4f}")
-        # print(f"F1 score: {eval_f1:.3f}")
-        # writer.add_scalar('Loss/Test', eval_loss, -1)
-        # writer.add_scalar('F1/Test', eval_f1, -1)
-        # writer.add_scalar('Specificity/Test', eval_specificity, -1)
-
-        # val_loss, precison, recall, specificity, f1 = self.validate_model()
-        # print(f"Validation Loss: {val_loss:.4f}")
-        # print(f"F1 score: {f1:.3f}")
-        # writer.add_scalar('Loss/Validation', val_loss, -1)
-        # writer.add_scalar('F1/Validation', f1, -1)
-        # writer.add_scalar('Specificity/Validation', specificity, -1)
-
-        # print(self.scheduler)
         scheduler_exist = False if self.scheduler==None else True
         scheduler_step_within_batch = isinstance(self.scheduler, OneCycleLR)
         print('Update scheduler in each batch:', scheduler_step_within_batch)
@@ -91,21 +117,17 @@ class BinaryAnomalyTrain:
         for epoch in range(n_epochs):
             self.model.train()
             total_loss = 0.0
-            # for name, param in self.model.named_parameters():
-            #     print(f"Parameter: {name}, Requires Grad: {param.requires_grad}")
             print(f'--- Training Epoch: {epoch:3d} ---')
             for batch_idx, data in enumerate(tqdm(self.train_loader)):
-                u_seq, u_interval ,u_label = data.values()
+                u_seq, u_interval, u_att_mask, u_label = data.values()
                 if self.move_tensor:
                     u_seq = u_seq.to(self.device)
                     u_interval = u_interval.to(self.device)
+                    u_att_mask = u_att_mask.to(self.device)
                 u_label = u_label.to(self.device)
                 self.optimizer.zero_grad()
-                logits = self.model(u_seq, u_interval)
+                logits = self.model(u_seq, u_att_mask, u_interval)
                 loss = self.criterion(logits, u_label)
-                # batch_size = u_seq.size(0)
-                # loss = loss / batch_size
-                # print(loss.item())
                 if math.isnan(loss.item()):
                     print('Loss nan!')
                 loss.backward()
@@ -113,12 +135,6 @@ class BinaryAnomalyTrain:
                 self.optimizer.step()
                 if scheduler_exist and scheduler_step_within_batch: self.scheduler.step()
                 total_loss += loss.item()
-
-                # if batch_idx!= 0 and batch_idx%50 == 0:
-                #     eval_loss, precision, recall, eval_specificity, eval_f1 = self.validate_model()
-                #     writer.add_scalar('Loss/eval', eval_loss, batch_idx)
-                #     writer.add_scalar('F1/eval', eval_f1, batch_idx)
-                #     writer.add_scalar('Specificity/eval', eval_specificity, batch_idx)
 
             if scheduler_exist and (not scheduler_step_within_batch): self.scheduler.step()
             avg_train_loss = total_loss / len(self.train_loader)
@@ -142,16 +158,8 @@ class BinaryAnomalyTrain:
             writer.add_scalar('F1/Validation', f1, epoch)
             writer.add_scalar('Specificity/Validation', specificity, epoch)
 
-            # if epoch % 5 ==0:
-            #     eval_loss, eval_precision, eval_recall, eval_specificity, eval_f1 = self.evaluate_model()
-            #     print(f"Testset Loss: {eval_loss:.4f}")
-            #     print(f"F1 score: {eval_f1:.3f}")
-            #     writer.add_scalar('Loss/Test', eval_loss, epoch)
-            #     writer.add_scalar('F1/Test', eval_f1, epoch)
-            #     writer.add_scalar('Specificity/Test', eval_specificity, epoch)
             writer.close()
-            # os.makedirs('./checkpoint', exist_ok=True)
-            # torch.save(self.model.state_dict(), './checkpoint/saved_model.pth')
+
 
     def validate_model(self):
         print('--- Validation ---')
@@ -161,38 +169,20 @@ class BinaryAnomalyTrain:
         all_predicted_probs = []
         with torch.no_grad():
             for data in tqdm(self.val_loader):
-                u_seq, u_interval ,u_label = data.values()
+                u_seq, u_interval, u_att_mask, u_label = data.values()
                 if self.move_tensor:
                     u_seq = u_seq.to(self.device)
                     u_interval = u_interval.to(self.device)
-
+                    u_att_mask = u_att_mask.to(self.device)
                 u_label = u_label.to(self.device)
-                output_logits = self.model(u_seq, u_interval)
+                output_logits = self.model(u_seq, att_mask = u_att_mask, time_intervals = u_interval)
                 loss = self.criterion(output_logits, u_label)
-                # batch_size = u_seq.size(0)
-                # loss = loss / batch_size
                 if math.isnan(loss.item()):
                     print('Loss nan!')
                 total_val_loss += loss.item()
                 predicted_probs = torch.argmax(output_logits, dim=1)
                 all_true_labels.append(u_label)
                 all_predicted_probs.append(predicted_probs)
-
-            # for data in tqdm(self.val_loader):
-            #     u_seq, u_interval ,u_label = data.values()
-            #     output_logits = self.model(u_seq, u_interval)
-            #     predicted_probs = torch.argmax(output_logits, dim=1)
-            #     # predicted_probs = torch.where(output_logits >= 0.5, torch.tensor(1), torch.tensor(0))
-
-            #     all_true_labels.append(u_label)
-            #     all_predicted_probs.append(predicted_probs)
-
-            #     output_logits = output_logits.detach().cpu()
-            #     # output_logits = output_logits.view_as(u_label)
-            #     loss = self.criterion(output_logits, u_label)
-            #     batch_size = u_seq.size(0)
-            #     loss = loss / batch_size
-            #     total_val_loss += loss.item()
 
         all_true_labels = torch.cat(all_true_labels, dim=0)
         all_predicted_probs = torch.cat(all_predicted_probs, dim=0)
@@ -210,64 +200,60 @@ class BinaryAnomalyTrain:
         all_predicted_probs = []
         with torch.no_grad():
             for data in tqdm(self.test_loader):
-                log_seq, time_intervals ,labels = data.values()
-                output_logits = self.model(log_seq, time_intervals, parsed = False)
+                log_seq, att_mask,time_intervals ,labels = data.values()
+                output_logits = self.model(log_seq, att_mask, time_intervals, parsed = False)
                 if self.move_tensor:
                     u_seq = u_seq.to(self.device)
                     u_interval = u_interval.to(self.device)
                 log_seq = log_seq.to(self.device)
                 time_intervals = time_intervals.to(self.device)
                 labels = labels.to(self.device)
-                # output_logits = output_logits.detach().cpu()
                 loss = self.criterion(output_logits, labels)
                 total_val_loss += loss.item()
 
                 predicted_probs = torch.argmax(output_logits, dim=1)
-                # predicted_probs = torch.where(output_logits >= 0.5, torch.tensor(1), torch.tensor(0))
                 all_gt_labels.append(labels)
                 all_predicted_probs.append(predicted_probs)
-                # output_logits = output_logits.view_as(labels)
 
         all_gt_labels = torch.cat(all_gt_labels, dim=0)
         all_predicted_probs = torch.cat(all_predicted_probs, dim=0)
-
-        # print(all_true_labels)
-        # print(all_predicted_probs)
 
         precision, recall, specificity, f1 = calculate_metrics(all_gt_labels, all_predicted_probs)
         avg_val_loss = total_val_loss / len(self.val_loader)
         return avg_val_loss, precision, recall, specificity, f1
 
-def main():
-    test_log_path = './dataset/BGL/BGL_test.csv'
-    cpt_save_path = './checkpoint'
-    tb_log_path = './anomaly_runs'
+def main(args):
+    # Load paths configuration
+    with open('paths.yaml', 'r') as f:
+        paths_config = yaml.safe_load(f)
+    
+    # Get environment-specific paths and common dataset structure
+    env_paths = paths_config[args.env]
+    dataset_structure = paths_config['dataset']
+    dataset = args.dataset
+    
+    # Set up base paths
+    cpt_save_path = env_paths['checkpoint']
+    tb_log_path = env_paths['tensorboard']
 
+    # Common path construction
+    dataset_prefix = os.path.join(env_paths['dataset_prefix'], dataset)
+    train_log_path = os.path.join(dataset_prefix, dataset_structure['train'])
+    val_log_path = os.path.join(dataset_prefix, dataset_structure['test'])  # Using test as validation
+    tid_mapping_path = os.path.join(dataset_prefix, dataset_structure['embeddings']['template_id_mapping'])
+    pt_embed_path = os.path.join(dataset_prefix, dataset_structure['embeddings'][args.embed_method+'_embedding'])
+    pt_embed_filename = os.path.splitext(os.path.basename(pt_embed_path))[0]
 
-    # Dataset
-    dataset = 'HDFS'
-    # pt_embed_file = 'random_384_embedding_params.pth'
-    pt_embed_file = 'sentence_embedding_params.pth'
-    train_log_path = f'./dataset/{dataset}/train.csv'
-    val_log_path = f'./dataset/{dataset}/test.csv'
-    tid_mapping_path = f'./dataset/{dataset}/template_id_mapping.json'
-    pt_embed_path = f'./dataset/{dataset}/' + pt_embed_file
-
-
-
-    # min_sequence_length = 64  # not applicable when doing anomaly detection
     min_sequence_length = 128
     max_sequence_length = 512
     step_size = 64
-    # 'temporal'  'positional' 'time2vec', 'None','temporal_only', 'time2vec_only'
-    seq_enc_method = 'None'
+    seq_enc_method = args.seq_enc_method
 
     time_mode = 'first'
-    # time_mode = 'gap'
+    d_model = args.d_model
     num_heads = 8
     ff_hidden_size = 2048  # default
     num_layers = 2
-    # lr = 1e-5
     lr = 5e-4
     n_epochs = 100
 
@@ -276,9 +262,7 @@ def main():
     batch_factor = 1
     train_batch_size = 32 * batch_factor
     val_batch_size = 32
-    test_batch_size = 32
 
-    # se_dropout = 0.1
     se_dropout = 0
     tf_dropout = 0.1
 
@@ -304,31 +288,27 @@ def main():
         tokenizer = LogSeqTokenizer(tid_mapping_path, max_sequence_length)
         train_dataset = VariantLogSequenceDataset(train_log_path, tid_mapping_path, tokenizer, min_sequence_length = min_sequence_length, max_sequence_length = max_sequence_length, step_size = step_size, time_mode = time_mode)
         val_dataset = VariantLogSequenceDataset(val_log_path, tid_mapping_path, tokenizer, min_sequence_length = min_sequence_length, max_sequence_length = max_sequence_length, step_size = step_size, time_mode = time_mode)
-    test_dataset = RawLogDataset(test_log_path, max_sequence_length = max_sequence_length)
 
     train_loader = DataLoader(train_dataset, batch_size=train_batch_size, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=val_batch_size, shuffle=False)
-    test_loader = DataLoader(test_dataset, batch_size=test_batch_size, shuffle=False, collate_fn=test_dataset.collate_fn)
+    test_loader = None
 
-    model = AnomalyModel(pt_embed_path, num_heads, ff_hidden_size, num_layers, se_dropout, tf_dropout, max_sequence_length = max_sequence_length, seq_enc_method = seq_enc_method, tid_mapping_file = tid_mapping_path)
+    model = AnomalyModel(pt_embed_path, d_model, num_heads, ff_hidden_size, num_layers, se_dropout, tf_dropout, max_sequence_length = max_sequence_length, seq_enc_method = seq_enc_method, tid_mapping_file = tid_mapping_path)
     model.to(device)
-    # print('GPU Count:', torch.cuda.device_count())
-    # if torch.cuda.device_count() > 1:
-    #     model = torch.nn.DataParallel(model)
+
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
-    # scheduler = ExponentialLR(optimizer, gamma=0.9)  # Adjust gamma as needed
     scheduler = OneCycleLR(optimizer, max_lr = lr, epochs = n_epochs, steps_per_epoch = len(train_loader))
-    # scheduler = None
 
     criterion = torch.nn.CrossEntropyLoss()
-    # criterion = torch.nn.BCEWithLogitsLoss()
 
     binary_anomaly_train = BinaryAnomalyTrain(model, device, train_loader, val_loader, test_loader, criterion, optimizer, scheduler, freeze_embedding, es_patience, cpt_save_path)
 
-    str_cfg = f'bin_d{dataset}_l{num_layers}_h{num_heads}_{seq_enc_method}_len{min_sequence_length}-{max_sequence_length}_step{step_size}_mode{time_mode}_{pt_embed_file}'
+
+    str_cfg = f'bin_d{dataset}_d_model{d_model}_l{num_layers}_h{num_heads}_{seq_enc_method}_len{min_sequence_length}-{max_sequence_length}_step{step_size}_mode{time_mode}_{pt_embed_filename}'
     binary_anomaly_train.train_model(n_epochs, tb_log_path, str_cfg)
     return
 
 if __name__ == "__main__":
-    main()
+    args = parse_arguments()
+    main(args)

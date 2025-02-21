@@ -48,14 +48,8 @@ def embed_template(tmp, emb_dim):
     tmp = tmp.lower()
     tmp = re.sub(r'[^a-zA-Z\s,]', ' ', tmp) 
 
-    # print(tmp)
     output_emb = model.encode(tmp)
-    # print(output_emb.shape)
     return output_emb
-
-
-    # print(last_hidden_states.shape)
-    # return np.random.rand(1, emb_dim)
 
 def emb_generation(id_temp_dict, tid_id_dict):
     embedding_dim = 384

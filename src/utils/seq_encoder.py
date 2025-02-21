@@ -53,23 +53,6 @@ class TimeIntervalEncoding(nn.Module):
         return interval_embedding
     
 
-    # TODO: Mistake implementation
-    # def time_interval_encoding(self, embedded: Tensor, time_intervals: Tensor) -> Tensor:
-    #     # modified div_term, no need to have interval here
-    #     # Experiment done: expand the period to 100000*2pi, no significant difference.
-    #     div_term = torch.exp(torch.arange(0, self.d_model) * (-math.log(10000.0) / self.d_model)).to(self.device)  # not correct! div term should be like 1,1,3,3,5,5
-    #     print('div_term', div_term.shape)
-    #     interval_embedding = torch.zeros_like(embedded).to(self.device)
-    #     print('interval_embedding', interval_embedding.shape)
-    #     rep_interval = time_intervals.unsqueeze(dim=2).repeat(1, 1, self.d_model).to(self.device)
-    #     print('rep_interval', rep_interval.shape)
-    #     pos_term = rep_interval * div_term  # not correct!
-    #     print('pos_term', pos_term.shape)
-    #     interval_embedding[:, :, 0::2] = torch.sin(pos_term[:,:,0::2]) # pos_term[:,:,0::2] and pos_term[:,:,1::2] are actually same.
-    #     interval_embedding[:, :, 1::2] = torch.cos(pos_term[:,:,1::2])
-
-    #     return interval_embedding
-
     def forward(self, x: Tensor, time_intervals: Tensor) -> Tensor:
         """
         Arguments:
@@ -136,9 +119,6 @@ def main():
     tokenizer = LogSeqTokenizer(tid_mapping_path, max_sequence_length)
     log_dataset = LogSequenceDataset(log_file_path, tid_mapping_path, tokenizer, min_sequence_length, max_sequence_length, time_mode, time_unit, anomaly_detection = True)
 
-    # Sample input sequence
-    # input_sequence = torch.randint(0, vocab_size, (10, 5))  # (sequence length, batch size)
-
     batch_size = 2
     data_loader = DataLoader(log_dataset, batch_size=batch_size, shuffle=False)
 
@@ -153,25 +133,10 @@ def main():
         embedding_layer = nn.Embedding(vocab_size, embedding_size)
         embedding_layer.load_state_dict(torch.load(pt_embed_path))
         embedded = embedding_layer(batch['tid_seq'])
-        # print(batch['tid_seq'])
-        # print(embedded.shape)
-        # print(embedded[1])
-        # pe_layer = PositionalEncoding(embedding_size)
-        # pe = pe_layer(embedded)
         
         pe_layer = TimeIntervalEncoding(embedding_size)
         pe = pe_layer(embedded, time_intervals)
 
-        # print(pe.shape)
-
-
-        # pe_layer = Time2VecEncoding(embedding_size)
-
-        # pe = pe_layer(embedded, time_intervals)
-        # print(pe)
-        # output = model(batch['tid_seq'], time_intervals = time_intervals)
-        # print(output.shape)
-        # print(batch)
         break
 if __name__ == "__main__":
     main()

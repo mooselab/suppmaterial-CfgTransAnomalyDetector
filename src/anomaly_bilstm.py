@@ -56,9 +56,6 @@ def calculate_metrics(true_labels, predicted_probs, threshold=0.5):
     predicted_labels_np = predicted_labels.cpu().numpy()
     true_labels_flat = true_labels_np.flatten()
     predicted_labels_flat = predicted_labels_np.flatten()
-    # precision = precision_score(true_labels_flat, predicted_labels_flat)
-    # recall = recall_score(true_labels_flat, predicted_labels_flat)
-    # f1 = f1_score(true_labels_flat, predicted_labels_flat)
     conf_matrix = confusion_matrix(true_labels_flat, predicted_labels_flat)
     tn, fp, fn, tp = conf_matrix.ravel()
     print(tn, fp, fn, tp)
@@ -73,8 +70,6 @@ def main():
     train_log_path = './dataset/BGL/parsed_result/BGL_train.csv'
     val_log_path = './dataset/BGL/parsed_result/BGL_val.csv'
     tid_mapping_path = './dataset/BGL/model/template_id_mapping.json'
-    # pt_embed_path = './dataset/BGL/model/embedding_params.pth'
-    # pt_embed_path = './dataset/BGL/model/768_embedding_params.pth'
     pt_embed_path = './dataset/BGL/model/bert/sentence_embedding_params.pth'
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     torch.manual_seed(42)
@@ -110,9 +105,6 @@ def main():
             optimizer.zero_grad()
             logits = model(u_seq)
             loss = criterion(logits, u_label)
-            # batch_size = u_seq.size(0)
-            # loss = loss / batch_size
-            # print(loss.item())
             if math.isnan(loss.item()):
                 print('Loss nan!')
             loss.backward()
@@ -120,7 +112,6 @@ def main():
 
         avg_train_loss = total_loss / len(train_loader)
         print(f"Epoch [{epoch+1}/{n_epochs}] - Avg. Training Loss: {avg_train_loss:.4f}")
-
 
         print('--- Validation ---')
         model.eval()
@@ -133,8 +124,6 @@ def main():
                 u_label = u_label.to(device)
                 output_logits = model(u_seq)
                 loss = criterion(output_logits, u_label)
-                # batch_size = u_seq.size(0)
-                # loss = loss / batch_size
                 if math.isnan(loss.item()):
                     print('Loss nan!')
                 total_val_loss += loss.item()

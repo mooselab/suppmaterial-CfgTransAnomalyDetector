@@ -45,7 +45,7 @@ class EarlyStopping:
             self.save_checkpoint(val_loss, model, self.filename)
             self.counter = 0
 
-    def save_checkpoint(self, val_loss, model, filename):
+    def save_checkpoint(self, val_loss, model, filename = 'saved_model.pth'):
         '''Saves model when validation loss decrease.'''
         if self.verbose and val_loss !=-1:
             self.trace_func(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')

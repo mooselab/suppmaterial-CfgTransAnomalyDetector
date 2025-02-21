@@ -8,14 +8,19 @@ The repository is organized as follows:
 
 ### `src` Folder
 
-- **utils**: Utility functions and helper scripts. The implementations of positional and temporal encoding methods are included.
-- **anomaly_bilstm.py**: Script for anomaly detection using BiLSTM.
-- **anomaly_model.py**: Defines the anomaly detection model architecture.
-- **eval_anomaly_bin.py**: Evaluation script for binary anomaly detection.
-- **model.py**: Contains the transformer model definitions and configurations.
-- **sentence_embedding_generation.py**: Script for generating sentence embeddings.
-- **train_anomaly_binary.py**: Training script for binary anomaly detection.
-
+- **utils**: Utility functions and helper scripts
+  - **dataset.py**: Dataset classes for different log formats
+  - **tokenizer.py**: Log sequence tokenization utilities
+  - **seq_encoder.py**: Implementations of positional and temporal encoding methods
+  - **earlystopping.py**: Early stopping implementation for training
+  - **config.py**: Configuration utilities
+- **anomaly_model.py**: Defines the main anomaly detection model architecture
+- **anomaly_bilstm.py**: Implementation of BiLSTM-based anomaly detection
+- **anomaly_neurallog.py**: Implementation of NeuralLog architecture
+- **model.py**: Contains the base transformer model definitions
+- **train_anomaly_binary.py**: Training script for binary anomaly detection
+- **train_neurallog.py**: Training script for NeuralLog model
+- **paths.yaml**: Configuration file for different environment paths
 
 ## Usage
 
@@ -26,14 +31,32 @@ To use the supplementary material, follow these steps:
    git clone https://github.com/LogAnalyticsResearcher/CfgTransAnomalyDetector.git
    cd CfgTransAnomalyDetector
    ```
-   
-2. Install the required dependencies:
-```pip install -r requirements.txt```
 
-3. Navigate to the `src` directory and run the desired scripts.
-   - First, semantic embeddings for log templates should be generated with **sentence_embedding_generation.py**.
-   - Modify the parameters within **train_anomaly_binary.py**.
-   - Train and test the model: ``python train_anomaly_binary.py``
+2. Install the required dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. Configure paths:
+   - Update `paths.yaml` with appropriate paths for your environment
+   - Set up dataset paths according to the specified structure
+
+4. Training models:
+   - For transformer-based anomaly detection:
+     ```bash
+     python train_anomaly_binary.py --dataset BGL --env local --seq_enc_method temporal --d_model 64 --embed_method sentence
+     ```
+   - For NeuralLog-based detection:
+     ```bash
+     python train_neurallog.py --dataset BGL --env local
+     ```
+
+   Available arguments:
+   - `--dataset`: Dataset to use (default: 'BGL')
+   - `--env`: Environment configuration ('local' or 'cluster')
+   - `--seq_enc_method`: Sequence encoding method ('temporal', 'positional', 'time2vec', 'None', 'temporal_only', 'time2vec_only')
+   - `--d_model`: Model dimension (default: 64)
+   - `--embed_method`: Log embedding method ('sentence', 'random', 'onehot')
 
 ## License
 

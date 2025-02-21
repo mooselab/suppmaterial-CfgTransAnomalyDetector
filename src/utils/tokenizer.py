@@ -16,12 +16,13 @@ class LogSeqTokenizer:
         # Tokenize or encode the sequence (replace this step with your preprocessing logic)
         tkid_sequence = sequence.map(self.vocab).tolist()
         tkid_sequence = [self.agg_token_index] + tkid_sequence + [self.eos_token_index] # Add the aggregation and eos tokens
-        padded_sequence = self.padding(tkid_sequence)
         if pad:
-            ret = padded_sequence
+            padded_sequence = self.padding(tkid_sequence)
+            ret_seq = padded_sequence
         else:
-            ret = tkid_sequence
-        return ret
+            ret_seq = tkid_sequence
+        ret_att_mask = (ret_seq==2)
+        return ret_seq, ret_att_mask
 
     def padding(self, sequence):
         # Ensure uniform sequence length (padding or truncating) and convert numerical sequence to PyTorch tensor
@@ -32,38 +33,14 @@ class LogSeqTokenizer:
         intervals = [self.pad_dummy_time] + intervals.tolist() + [self.pad_dummy_time] # aligning the time serie to the template sequence
         padded_intervals = torch.nn.functional.pad(torch.tensor(intervals), (0, self.max_sequence_length - len(intervals)), value=self.pad_dummy_time)
         return padded_intervals
-    
-    # def padding_time_intervals(self, intervals):
-    #     intervals = torch.tensor(intervals.values)
-    #     padding_tensor = torch.full((intervals.shape[0], 1), self.pad_dummy_time)
-    #     print(padding_tensor.shape)
-    #     print(intervals.shape)
-    #     # Concatenating the padding tensor with the original tensor along the second dimension
-    #     intervals = torch.cat((padding_tensor, intervals), dim=1)
-    #     intervals = torch.cat((intervals, padding_tensor), dim=1)
-    #     padded_intervals = torch.nn.functional.pad(torch.tensor(intervals), (0, self.max_sequence_length - len(intervals)), value=self.pad_dummy_time)
-    #     return padded_intervals
-
-    def fit_on_log_templates(self, templates):
-        # TODO
-        # Generate embeddings and lookup tables for log templates
-        pass
-        # for text in texts:
-        #     tokens = self.tokenize(text)
-        #     for token in tokens:
-        #         if token not in self.vocab:
-        #             self.vocab[token] = self.vocab_index
-        #             self.vocab_index += 1
-
 
 def main():
     from dataset import LogSequenceDataset
-    log_file_path = './dataset/BGL/parsed_result/BGL_train.csv'
+    log_file_path = './dataset/BGL/parsed_result/BGL_train_0.8.csv'
     tid_mapping_path = './dataset/BGL/model/template_id_mapping.json'
     max_sequence_length = 128  # Define your maximum sequence length
     tokenizer = LogSeqTokenizer(tid_mapping_path, max_sequence_length)
     log_dataset = LogSequenceDataset(log_file_path, tid_mapping_path, tokenizer, min_sequence_length=16, max_sequence_length=max_sequence_length)
-
 
     # Create a DataLoader
     batch_size = 2
