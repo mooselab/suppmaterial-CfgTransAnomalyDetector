@@ -28,8 +28,8 @@ To use the supplementary material, follow these steps:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/LogAnalyticsResearcher/CfgTransAnomalyDetector.git
-   cd CfgTransAnomalyDetector
+   git clone https://github.com/mooselab/suppmaterial-CfgTransAnomalyDetector.git 
+   cd ./suppmaterial-CfgTransAnomalyDetector
    ```
 
 2. Install the required dependencies:
